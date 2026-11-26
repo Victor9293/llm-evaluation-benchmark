@@ -1630,6 +1630,7 @@ function viewAbout() {
             h('li', {}, icon('code'), h('a', { href: REPO_URL, rel: 'noopener' }, 'Source code')),
             h('li', {}, icon('info'), h('a', { href: `${REPO_URL}/issues`, rel: 'noopener' }, 'Report an issue')),
             h('li', {}, icon('shield'), h('a', { href: `${REPO_URL}/blob/main/LICENSE`, rel: 'noopener' }, 'MIT licence')),
+            h('li', {}, icon('person'), h('a', { href: 'https://www.linkedin.com/in/victor-ferreira-897546452', rel: 'noopener' }, 'Victor Ferreira on LinkedIn')),
           ),
         ),
         h('div', { class: 'side-section' }, h('h2', { class: 'side-title' }, 'Status'), label('Early stage', 'attention'), h('p', { class: 'muted small' }, 'Version 0.1.0')),

@@ -127,6 +127,10 @@ scripts/serve.js      Local static server (no dependencies)
 - A strict Content Security Policy allows only same-origin scripts and styles, with `connect-src 'none'`.
 - Imported files are validated field by field, and unknown fields are dropped.
 
+## Author
+
+Victor Ferreira · [LinkedIn](https://www.linkedin.com/in/victor-ferreira-897546452) · [GitHub](https://github.com/Victor9293)
+
 ## Licence
 
 [MIT](LICENSE) © 2026 Victor Ferreira
