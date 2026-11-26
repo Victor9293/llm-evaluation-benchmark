@@ -21,9 +21,11 @@ Browser-based workbench to benchmark and human-evaluate LLM responses (manual en
 2. **Run it yourself.** Copy the prompt into any chatbot or model, then paste the response back.
 3. **Evaluate.** Automated checks flag format and content problems as you paste. You then score the response on a five-criterion rubric and give a verdict (Pass / Partial / Fail) with notes.
 4. **Compare two answers.** Paste two responses to the same prompt side by side, choose which is better on a five-point scale (A ≫ B … B ≫ A) and justify the choice in writing, as in pairwise ranking tasks used to train models.
-5. **Review.** Results are summarised by model and by category, with a head-to-head win rate for comparisons. You can export everything as JSON or CSV and import it again.
+5. **Review and share.** Results are summarised by model and by category, with a head-to-head win rate for comparisons. Export everything as JSON or CSV, or download a **Markdown report** of your own evaluations and rationales to share.
 
 There are no API keys, accounts, cookies, analytics or network calls. Evaluations stay in your browser's `localStorage`.
+
+Small things that make long sessions easier: unsaved work is kept as a draft if you navigate away, **Ctrl + Enter** saves (and jumps to the next unevaluated case), the form shows your progress per model, and the case list filters by category, language and difficulty.
 
 ## The benchmark
 
@@ -94,7 +96,9 @@ The app uses ES modules, so open it through a local server rather than by double
 - storage validation rejects malformed or tampered data;
 - CSV export escapes values and neutralises spreadsheet formulas;
 - import/export round-trips without data loss, including pairwise comparisons;
-- the head-to-head summary counts wins, ties and losses correctly.
+- the head-to-head summary counts wins, ties and losses correctly;
+- the abstention check is not fooled by incidental wording ("in this fictional world…");
+- the Markdown report escapes table cells and quotes responses safely.
 
 CI runs the tests on every push and pull request. The site is deployed to GitHub Pages only after the tests pass.
 
@@ -109,6 +113,7 @@ js/
   checks.js           Automated checks
   scoring.js          Rubric and summaries
   storage.js          localStorage, validation, JSON/CSV import and export
+  report.js           Markdown report builder
   router.js           Hash router
   dom.js, icons.js    Small DOM and icon helpers
 test/                 Unit tests (node:test)

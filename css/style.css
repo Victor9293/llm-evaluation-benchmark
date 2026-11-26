@@ -1813,6 +1813,65 @@ textarea.form-control {
   margin-top: 8px;
 }
 
+/* ───────────── drafts, shortcuts, progress, rationale guide ───────────── */
+
+.draft-notice {
+  margin-bottom: 16px;
+}
+
+.shortcut-hint {
+  margin-top: 10px;
+}
+
+kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+}
+
+.model-progress {
+  margin-top: 8px;
+}
+
+.model-progress .progress {
+  max-width: 320px;
+  margin-top: 6px;
+}
+
+.rationale-examples {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+  margin: 12px 0 4px;
+}
+
+.rationale-example {
+  padding: 14px 16px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+}
+
+.rationale-example p {
+  margin: 6px 0 0;
+}
+
+.rationale-example--bad {
+  background: var(--danger-subtle);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.rationale-example--good {
+  background: var(--success-subtle);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+}
+
 /* ───────────── responsive ───────────── */
 
 @media (max-width: 1100px) {
@@ -1901,7 +1960,8 @@ textarea.form-control {
 
   .card-grid,
   .steps-grid,
-  .split {
+  .split,
+  .rationale-examples {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -1,4 +1,5 @@
-import { CASES, CATEGORIES, LANGUAGES, getCase, getCategory } from './cases.js';
+import { CASES, CATEGORIES, LANGUAGES, DIFFICULTIES, getCase, getCategory } from './cases.js';
+import { buildReport } from './report.js';
 import { runChecks, describeCheck } from './checks.js';
 import {
   CRITERIA,
@@ -35,6 +36,47 @@ const CASE_IDS = new Set(CASES.map((c) => c.id));
 const main = document.getElementById('main');
 const flashRegion = document.getElementById('flash');
 let pendingFlash = null;
+let shortcutHandler = null; // set by form views; Ctrl/Cmd + Enter calls it
+
+const DRAFT_PREFIX = 'leb.draft.';
+
+function draftGet(name) {
+  try {
+    const raw = window.sessionStorage.getItem(DRAFT_PREFIX + name);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function draftSet(name, value) {
+  try {
+    window.sessionStorage.setItem(DRAFT_PREFIX + name, JSON.stringify(value));
+  } catch {
+    /* storage unavailable: drafts are simply not kept */
+  }
+}
+
+function draftClear(name) {
+  try {
+    window.sessionStorage.removeItem(DRAFT_PREFIX + name);
+  } catch {
+    /* ignore */
+  }
+}
+
+function draftNotice(name, hash) {
+  const discard = h('button', { type: 'button', class: 'btn-link' }, 'Discard draft');
+  discard.addEventListener('click', () => {
+    draftClear(name);
+    navigate(hash);
+  });
+  return h('div', { class: 'notice notice-success draft-notice' }, icon('info'), h('span', {}, 'Unsaved draft restored from earlier in this session. ', discard));
+}
+
+function shortcutHint(text) {
+  return h('p', { class: 'note shortcut-hint' }, h('kbd', {}, 'Ctrl'), ' + ', h('kbd', {}, 'Enter'), ` ${text}`);
+}
 
 function safeLocalStorage() {
   try {
@@ -332,6 +374,7 @@ function viewBenchmark(query) {
   const state = {
     cat: CATEGORIES.some((c) => c.id === query.cat) ? query.cat : 'all',
     lang: query.lang in LANGUAGES ? query.lang : 'all',
+    diff: DIFFICULTIES.includes(query.diff) ? query.diff : 'all',
     q: query.q ?? '',
   };
   const evaluatedIds = new Set(store.all().map((e) => e.caseId));
@@ -349,6 +392,12 @@ function viewBenchmark(query) {
     { class: 'form-select', 'aria-label': 'Language', value: state.lang },
     h('option', { value: 'all' }, 'All languages'),
     Object.entries(LANGUAGES).map(([id, name]) => h('option', { value: id }, name)),
+  );
+  const diffSelect = h(
+    'select',
+    { class: 'form-select', 'aria-label': 'Difficulty', value: state.diff },
+    h('option', { value: 'all' }, 'All difficulties'),
+    DIFFICULTIES.map((d) => h('option', { value: d }, d[0].toUpperCase() + d.slice(1))),
   );
 
   const tabButtons = [{ id: 'all', name: 'All' }, ...CATEGORIES].map((cat) => {
@@ -369,6 +418,7 @@ function viewBenchmark(query) {
   function matches(c) {
     if (state.cat !== 'all' && c.category !== state.cat) return false;
     if (state.lang !== 'all' && c.lang !== state.lang) return false;
+    if (state.diff !== 'all' && c.difficulty !== state.diff) return false;
     const q = state.q.trim().toLowerCase();
     if (!q) return true;
     return [c.id, c.title, c.prompt, getCategory(c.category)?.name ?? ''].join(' ').toLowerCase().includes(q);
@@ -405,16 +455,18 @@ function viewBenchmark(query) {
   function update() {
     for (const btn of tabButtons) btn.setAttribute('aria-pressed', String(btn.dataset.cat === state.cat));
     const shown = CASES.filter(matches);
-    const filtered = state.cat !== 'all' || state.lang !== 'all' || state.q.trim() !== '';
+    const filtered = state.cat !== 'all' || state.lang !== 'all' || state.diff !== 'all' || state.q.trim() !== '';
     const clearBtn = filtered
       ? h('button', { type: 'button', class: 'btn-link' }, 'Clear filters')
       : null;
     clearBtn?.addEventListener('click', () => {
       state.cat = 'all';
       state.lang = 'all';
+      state.diff = 'all';
       state.q = '';
       search.value = '';
       langSelect.value = 'all';
+      diffSelect.value = 'all';
       update();
     });
 
@@ -433,11 +485,15 @@ function viewBenchmark(query) {
           : h('div', { class: 'panel-body' }, blankslate('search', 'No cases match', 'Try a different search or clear the filters.')),
       ),
     );
-    history.replaceState(null, '', buildHash('benchmark', [], { cat: state.cat === 'all' ? '' : state.cat, lang: state.lang === 'all' ? '' : state.lang, q: state.q.trim() }));
+    history.replaceState(null, '', buildHash('benchmark', [], { cat: state.cat === 'all' ? '' : state.cat, lang: state.lang === 'all' ? '' : state.lang, diff: state.diff === 'all' ? '' : state.diff, q: state.q.trim() }));
   }
 
   search.addEventListener('input', () => {
     state.q = search.value;
+    update();
+  });
+  diffSelect.addEventListener('change', () => {
+    state.diff = diffSelect.value;
     update();
   });
   langSelect.addEventListener('change', () => {
@@ -453,7 +509,7 @@ function viewBenchmark(query) {
       actions: h('a', { class: 'btn btn-primary', href: '#/evaluate' }, icon('pencil'), 'Evaluate'),
     }),
     h('div', { class: 'segmented', role: 'group', 'aria-label': 'Category' }, tabButtons),
-    h('div', { class: 'filter-bar' }, h('div', { class: 'search-wrap' }, icon('search'), search), langSelect),
+    h('div', { class: 'filter-bar' }, h('div', { class: 'search-wrap' }, icon('search'), search), langSelect, diffSelect),
     listContainer,
   );
 }
@@ -561,6 +617,9 @@ function viewEvaluate(query) {
   }
   const initialCase = getCase(editing?.caseId ?? query.case) ?? CASES[0];
   let current = initialCase;
+  const savedDraft = editing ? null : draftGet('evaluate');
+  const draft =
+    savedDraft && savedDraft.caseId === current.id && (savedDraft.response?.trim() || savedDraft.notes?.trim()) ? savedDraft : null;
 
   // Case picker
   const caseSelect = h(
@@ -583,7 +642,7 @@ function viewEvaluate(query) {
     maxlength: '100',
     autocomplete: 'off',
     placeholder: 'e.g. the model name and version you used',
-    value: editing?.model ?? query.model ?? prefGet(LAST_MODEL_KEY) ?? '',
+    value: editing?.model ?? draft?.model ?? query.model ?? prefGet(LAST_MODEL_KEY) ?? '',
   });
   const modelList = h('datalist', { id: 'model-list' }, knownModels.map((m) => h('option', { value: m })));
   const responseInput = h('textarea', {
@@ -592,9 +651,23 @@ function viewEvaluate(query) {
     rows: '10',
     maxlength: '50000',
     placeholder: 'Paste the model’s full response here, exactly as it was given.',
-    value: editing?.response ?? '',
+    value: editing?.response ?? draft?.response ?? '',
   });
   const responseStats = h('p', { class: 'note' });
+  const progressNote = h('div', { class: 'model-progress' });
+
+  function updateProgress() {
+    const model = modelInput.value.trim();
+    if (!model) {
+      progressNote.replaceChildren(h('p', { class: 'note' }, 'Enter a model name to track your progress for it.'));
+      return;
+    }
+    const done = new Set(store.all().filter((e) => e.model === model).map((e) => e.caseId)).size;
+    progressNote.replaceChildren(
+      h('p', { class: 'note' }, `Progress for "${model}": ${done} / ${CASES.length} cases evaluated`),
+      progressBar(done / CASES.length),
+    );
+  }
 
   // Live checks
   const checksSummary = h('div', { class: 'checks-summary' });
@@ -602,6 +675,7 @@ function viewEvaluate(query) {
 
   // Rubric
   const rubricState = {};
+  if (draft?.rubric) Object.assign(rubricState, draft.rubric);
   const rubricContainer = h('div', { class: 'rubric' });
   const avgOut = h('strong', {}, '—');
 
@@ -633,6 +707,7 @@ function viewEvaluate(query) {
           });
           input.addEventListener('change', () => {
             rubricState[crit.id] = v;
+            persistDraft();
             setHint();
             updateAverage();
           });
@@ -667,7 +742,7 @@ function viewEvaluate(query) {
   }
 
   // Verdict
-  let verdict = editing?.verdict ?? '';
+  let verdict = editing?.verdict ?? draft?.verdict ?? '';
   const verdictGroup = h(
     'div',
     { class: 'radio-group radio-group--wide' },
@@ -675,6 +750,7 @@ function viewEvaluate(query) {
       const input = h('input', { type: 'radio', name: 'verdict', value: v.id, class: 'sr-only', checked: verdict === v.id });
       input.addEventListener('change', () => {
         verdict = v.id;
+        persistDraft();
       });
       return h('label', { class: `radio-pill radio-pill--${v.id}`, title: v.description }, input, h('span', {}, v.label));
     }),
@@ -685,8 +761,20 @@ function viewEvaluate(query) {
     rows: '3',
     maxlength: '5000',
     placeholder: 'Why this verdict? Note specific errors, broken constraints or fabricated details.',
-    value: editing?.notes ?? '',
+    value: editing?.notes ?? draft?.notes ?? '',
   });
+
+  function persistDraft() {
+    if (editing) return;
+    draftSet('evaluate', {
+      caseId: current.id,
+      model: modelInput.value,
+      response: responseInput.value,
+      notes: notesInput.value,
+      rubric: { ...rubricState },
+      verdict,
+    });
+  }
 
   const errorBox = h('div', { class: 'form-errors', role: 'alert' });
 
@@ -734,8 +822,17 @@ function viewEvaluate(query) {
     for (const key of Object.keys(rubricState)) delete rubricState[key];
     history.replaceState(null, '', buildHash('evaluate', [], { case: current.id }));
     updateCase();
+    persistDraft();
   });
-  responseInput.addEventListener('input', updateChecks);
+  responseInput.addEventListener('input', () => {
+    updateChecks();
+    persistDraft();
+  });
+  modelInput.addEventListener('input', () => {
+    updateProgress();
+    persistDraft();
+  });
+  notesInput.addEventListener('input', persistDraft);
 
   function collectErrors() {
     const errors = [];
@@ -779,6 +876,7 @@ function viewEvaluate(query) {
       return;
     }
     prefSet(LAST_MODEL_KEY, record.model);
+    draftClear('evaluate');
     if (goNext) {
       const done = new Set(store.all().filter((e) => e.model === record.model).map((e) => e.caseId));
       const start = CASES.indexOf(current);
@@ -799,8 +897,10 @@ function viewEvaluate(query) {
   saveBtn.addEventListener('click', () => save(false));
   const nextBtn = editing ? null : h('button', { type: 'button', class: 'btn' }, 'Save & next case', icon('arrowRight'));
   nextBtn?.addEventListener('click', () => save(true));
+  shortcutHandler = () => save(!editing);
 
   updateCase();
+  updateProgress();
 
   const mainCol = [
     box(
@@ -822,6 +922,7 @@ function viewEvaluate(query) {
         h('label', { class: 'form-label', for: 'model' }, 'Model'),
         modelInput,
         modelList,
+        progressNote,
         h('label', { class: 'form-label', for: 'response' }, 'Response'),
         responseInput,
         responseStats,
@@ -840,7 +941,9 @@ function viewEvaluate(query) {
     ),
     errorBox,
     h('div', { class: 'btn-row form-actions' }, saveBtn, nextBtn, h('a', { class: 'btn btn-invisible', href: editing ? '#/results' : '#/benchmark' }, 'Cancel')),
+    shortcutHint(editing ? 'saves your changes.' : 'saves and opens the next case.'),
   ];
+  if (draft) mainCol.unshift(draftNotice('evaluate', buildHash('evaluate', [], { case: current.id })));
 
   const side = h(
     'div',
@@ -877,6 +980,11 @@ function viewCompare(query) {
     return blankslate('info', 'Comparison not found', 'It may have been deleted.', [h('a', { class: 'btn', href: '#/results' }, 'Back to results')]);
   }
   let current = getCase(editing?.caseId ?? query.case) ?? CASES[0];
+  const savedDraft = editing ? null : draftGet('compare');
+  const draft =
+    savedDraft && savedDraft.caseId === current.id && (savedDraft.responseA?.trim() || savedDraft.responseB?.trim() || savedDraft.rationale?.trim())
+      ? savedDraft
+      : null;
 
   const caseSelect = h(
     'select',
@@ -932,7 +1040,11 @@ function viewCompare(query) {
         ),
       );
     };
-    responseInput.addEventListener('input', update);
+    responseInput.addEventListener('input', () => {
+      update();
+      persistDraft();
+    });
+    modelInput.addEventListener('input', () => persistDraft());
     const panel = h(
       'section',
       { class: `panel compare-side compare-side--${letter}` },
@@ -950,10 +1062,10 @@ function viewCompare(query) {
     return { panel, modelInput, responseInput, update };
   }
 
-  const A = side('a', editing?.modelA ?? query.modelA ?? '', editing?.responseA ?? '');
-  const B = side('b', editing?.modelB ?? query.modelB ?? '', editing?.responseB ?? '');
+  const A = side('a', editing?.modelA ?? draft?.modelA ?? query.modelA ?? '', editing?.responseA ?? draft?.responseA ?? '');
+  const B = side('b', editing?.modelB ?? draft?.modelB ?? query.modelB ?? '', editing?.responseB ?? draft?.responseB ?? '');
 
-  let preference = editing?.preference ?? '';
+  let preference = editing?.preference ?? draft?.preference ?? '';
   const prefInputs = new Map();
   const prefGroup = h(
     'div',
@@ -962,6 +1074,7 @@ function viewCompare(query) {
       const input = h('input', { type: 'radio', name: 'preference', value: p.id, class: 'sr-only', checked: preference === p.id });
       input.addEventListener('change', () => {
         preference = p.id;
+        persistDraft();
       });
       prefInputs.set(p.id, input);
       return h('label', { class: `radio-pill radio-pill--${p.winner}`, title: p.label }, input, h('span', {}, h('strong', { class: 'mono' }, p.short), p.label));
@@ -974,14 +1087,30 @@ function viewCompare(query) {
     rows: '4',
     maxlength: '5000',
     placeholder: 'Which response is better, and why? Quote the specific error, broken constraint or invented detail that decided it.',
-    value: editing?.rationale ?? '',
+    value: editing?.rationale ?? draft?.rationale ?? '',
   });
+
+  function persistDraft() {
+    if (editing) return;
+    draftSet('compare', {
+      caseId: current.id,
+      modelA: A.modelInput.value,
+      modelB: B.modelInput.value,
+      responseA: A.responseInput.value,
+      responseB: B.responseInput.value,
+      preference,
+      rationale: rationaleInput.value,
+    });
+  }
   const rationaleStats = h('p', { class: 'note' });
   const updateRationaleStats = () => {
     const n = rationaleInput.value.trim() ? rationaleInput.value.trim().split(/\s+/).length : 0;
     rationaleStats.textContent = `${n} word${n === 1 ? '' : 's'} · aim for 2–4 specific sentences`;
   };
-  rationaleInput.addEventListener('input', updateRationaleStats);
+  rationaleInput.addEventListener('input', () => {
+    updateRationaleStats();
+    persistDraft();
+  });
   updateRationaleStats();
 
   const swapBtn = h('button', { type: 'button', class: 'btn btn-sm' }, icon('swap'), 'Swap A and B');
@@ -994,6 +1123,7 @@ function viewCompare(query) {
     }
     A.update();
     B.update();
+    persistDraft();
   });
 
   const errorBox = h('div', { class: 'form-errors', role: 'alert' });
@@ -1055,16 +1185,19 @@ function viewCompare(query) {
       errorBox.replaceChildren(h('div', { class: 'notice notice-danger' }, icon('xCircle'), h('span', {}, `Could not save: ${err.message}`)));
       return;
     }
+    draftClear('compare');
     flash(editing ? 'Comparison updated.' : 'Comparison saved.');
     navigate('#/results');
   }
 
   const saveBtn = h('button', { type: 'button', class: 'btn btn-primary' }, icon('check'), editing ? 'Save changes' : 'Save comparison');
   saveBtn.addEventListener('click', save);
+  shortcutHandler = save;
 
   updateCase();
 
   return frag(
+    draft ? draftNotice('compare', buildHash('compare', [], { case: current.id })) : null,
     pageHead(editing ? 'Edit comparison' : 'Compare two responses', {
       subtitle: 'Run the same prompt in two models (or twice in one), paste both answers and decide which is better. This mirrors the side-by-side ranking used in AI training work.',
     }),
@@ -1095,6 +1228,7 @@ function viewCompare(query) {
     ),
     errorBox,
     h('div', { class: 'btn-row form-actions' }, saveBtn, h('a', { class: 'btn btn-invisible', href: editing ? '#/results' : '#/benchmark' }, 'Cancel')),
+    shortcutHint('saves the comparison.'),
   );
 }
 
@@ -1306,6 +1440,20 @@ function viewResults(query) {
   exportCsv?.addEventListener('click', () => download(`llm-eval-results-${stamp}.csv`, `﻿${toCSV(store.all(), CASES)}`, 'text/csv;charset=utf-8'));
   const exportCmpCsv = cmps.length ? h('button', { type: 'button', class: 'btn' }, icon('download'), 'Comparisons CSV') : null;
   exportCmpCsv?.addEventListener('click', () => download(`llm-eval-comparisons-${stamp}.csv`, `﻿${toComparisonsCSV(comparisonStore.all(), CASES)}`, 'text/csv;charset=utf-8'));
+  const exportReport = h('button', { type: 'button', class: 'btn btn-primary', title: 'Download a shareable Markdown report of your evaluations' }, icon('book'), 'Report');
+  exportReport.addEventListener('click', () =>
+    download(
+      `llm-eval-report-${stamp}.md`,
+      buildReport({
+        evaluations: store.all(),
+        comparisons: comparisonStore.all(),
+        cases: CASES,
+        categories: CATEGORIES,
+        appUrl: `${location.origin}${location.pathname}`,
+      }),
+      'text/markdown;charset=utf-8',
+    ),
+  );
   const clearAll = h('button', { type: 'button', class: 'btn btn-danger-outline' }, icon('trash'), 'Delete all');
   clearAll.addEventListener('click', () => {
     const n = store.all().length + comparisonStore.all().length;
@@ -1324,7 +1472,7 @@ function viewResults(query) {
   return frag(
     pageHead('Results', {
       subtitle: `${parts.join(' and ')}, entered in this browser.`,
-      actions: [exportJson, exportCsv, exportCmpCsv, importButton(render), clearAll],
+      actions: [exportReport, exportJson, exportCsv, exportCmpCsv, importButton(render), clearAll],
     }),
     all.length ? evaluationSections(all, query) : null,
     cmps.length ? comparisonSections(cmps) : null,
@@ -1392,6 +1540,29 @@ function viewRubric() {
     pageHead('Rubric & methodology', { subtitle: 'How responses are judged, and what the numbers can and cannot tell you.' }),
     box('Human rubric', 'law', frag(h('p', {}, 'Each response is scored from 1 to 5 on five criteria. Scores of 2 and 4 sit between the anchors. Choose N/A when a criterion does not apply; it is then left out of the average.'), criteriaTable), {}),
     box('Verdict', 'checkCircle', h('ul', { class: 'plain-list' }, VERDICTS.map((v) => h('li', {}, verdictLabel(v.id), ' ', v.description)))),
+    box(
+      'Writing a good rationale',
+      'pencil',
+      frag(
+        h('p', {}, 'The written explanation is often worth more than the score. A good rationale is specific (it quotes or points to the problem), tied to a rubric criterion, and says what a correct answer would look like.'),
+        h(
+          'div',
+          { class: 'rationale-examples' },
+          h('div', { class: 'rationale-example rationale-example--bad' }, h('strong', {}, 'Vague'), h('p', {}, '"The answer is wrong."')),
+          h(
+            'div',
+            { class: 'rationale-example rationale-example--good' },
+            h('strong', {}, 'Specific'),
+            h(
+              'p',
+              {},
+              '"The response invents a plot for a novel that does not exist instead of saying it cannot verify the title. This is a hallucination: Honesty 1, Accuracy 1. A good answer would say it cannot find the book and suggest checking a catalogue."',
+            ),
+          ),
+        ),
+        h('p', { class: 'note' }, 'Illustrative wording only; this is guidance, not a recorded result.'),
+      ),
+    ),
     box(
       'Pairwise comparison',
       'columns',
@@ -1491,6 +1662,7 @@ const TITLES = {
 const NAV_ROUTE = { case: 'benchmark' };
 
 function render() {
+  shortcutHandler = null;
   const { route, params, query } = parseHash(location.hash);
   let view;
   switch (route) {
@@ -1583,4 +1755,10 @@ function initNavIcons() {
 initNavIcons();
 initTheme();
 window.addEventListener('hashchange', onHashChange);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && shortcutHandler) {
+    e.preventDefault();
+    shortcutHandler();
+  }
+});
 render();

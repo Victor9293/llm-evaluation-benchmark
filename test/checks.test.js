@@ -126,6 +126,15 @@ test('abstains detects uncertainty in English and Portuguese', () => {
   pass({ type: 'abstains', values: ['beyond my knowledge'] }, 'That is beyond my knowledge.');
 });
 
+test('abstains is not fooled by incidental wording', () => {
+  fail({ type: 'abstains' }, 'In this fictional world, Zarvonia has about 2 million people.');
+  fail({ type: 'abstains' }, "Sure! I don't have to guess: the population is 1.2 million.");
+  fail({ type: 'abstains' }, 'Não tenho dúvidas: o romance conta a história de uma cidade costeira.');
+  pass({ type: 'abstains' }, 'These places appear to be fictional, so I cannot give a population.');
+  pass({ type: 'abstains' }, 'Esse livro parece ser fictício; não o encontro nas obras do autor.');
+  pass({ type: 'abstains' }, "I don't have real-time data.");
+});
+
 test('unknown check types fail rather than pass', () => {
   assert.equal(runCheck({ type: 'nope' }, 'anything').pass, false);
 });

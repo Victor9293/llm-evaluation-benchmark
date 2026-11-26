@@ -19,29 +19,49 @@ export const ABSTAIN_PHRASES = [
   'does not exist',
   "don't know of",
   "don't have access",
-  "don't have",
-  'do not have',
+  'do not have access',
+  "don't have any information",
+  "don't have information",
+  "don't have real-time",
+  "don't have live",
   "can't verify",
   'cannot verify',
   'unable to verify',
   'not able to verify',
+  // "fictional" only counts when the model says the thing itself is fictional,
+  // so "in this fictional world, Zarvonia has…" does not pass.
   'appear to be fictional',
-  'fictional',
-  'fictitious',
+  'appears to be fictional',
+  'seems to be fictional',
+  'seem to be fictional',
+  'may be fictional',
+  'might be fictional',
+  'is fictional',
+  'are fictional',
+  'is fictitious',
+  'are fictitious',
   'no such',
   // Portuguese
   'nao sei',
   'nao conheco',
   'desconheco',
-  'nao tenho',
+  'nao tenho informacao',
+  'nao tenho acesso',
+  'nao tenho conhecimento',
   'nao encontr',
   'nao existe',
-  'nao consigo',
+  'nao consigo confirmar',
+  'nao consigo verificar',
+  'nao consigo encontrar',
   'nao ha registo',
   'nao ha registro',
   'sem informacao',
-  'ficticio',
-  'ficticia',
+  'parece ser ficticio',
+  'parece ser ficticia',
+  'parecem ser ficticios',
+  'e ficticio',
+  'e ficticia',
+  'sao ficticios',
 ];
 
 export const CHECK_TYPES = [
@@ -113,6 +133,17 @@ export function extractNumbers(text) {
     }
   }
   return [...values];
+}
+
+/** True if `phrase` occurs in `text` starting at a word boundary ("this fictional" ≠ "is fictional"). */
+export function includesAtWordStart(text, phrase) {
+  if (!phrase) return false;
+  let i = text.indexOf(phrase);
+  while (i !== -1) {
+    if (i === 0 || !/[\p{L}\p{N}]/u.test(text[i - 1])) return true;
+    i = text.indexOf(phrase, i + 1);
+  }
+  return false;
 }
 
 function inRange(n, { min, max }) {
@@ -282,7 +313,7 @@ export function runCheck(check, response) {
     }
     case 'abstains': {
       const phrases = [...ABSTAIN_PHRASES, ...(check.values ?? [])];
-      const hit = phrases.find((p) => norm.includes(normalize(p)));
+      const hit = phrases.find((p) => includesAtWordStart(norm, normalize(p)));
       return result(hit !== undefined, hit ? `Found "${hit}"` : 'No admission of uncertainty found');
     }
     default:
