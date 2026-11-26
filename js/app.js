@@ -51,7 +51,7 @@ function prefSet(key, value) {
 // ───────────────────────────── shared components ─────────────────────────────
 
 function label(text, variant = 'secondary', extra = '') {
-  return h('span', { class: `Label Label--${variant} ${extra}`.trim() }, text);
+  return h('span', { class: `tag tag--${variant} ${extra}`.trim() }, text);
 }
 
 function categoryLabel(categoryId) {
@@ -60,7 +60,7 @@ function categoryLabel(categoryId) {
 }
 
 function langLabel(lang) {
-  return label(lang === 'pt' ? 'pt-PT' : 'EN', 'secondary', 'Label--mono');
+  return label(lang === 'pt' ? 'pt-PT' : 'EN', 'secondary', 'tag--mono');
 }
 
 function verdictLabel(verdict) {
@@ -72,14 +72,14 @@ function verdictLabel(verdict) {
 function box(title, iconName, body, { actions = null, id = null, flush = false } = {}) {
   return h(
     'section',
-    { class: 'Box', id },
+    { class: 'panel', id },
     h(
       'div',
-      { class: 'Box-header' },
-      h('h2', { class: 'Box-title' }, iconName ? icon(iconName) : null, title),
-      actions ? h('div', { class: 'Box-actions' }, actions) : null,
+      { class: 'panel-head' },
+      h('h2', { class: 'panel-title' }, iconName ? icon(iconName) : null, title),
+      actions ? h('div', { class: 'panel-actions' }, actions) : null,
     ),
-    h('div', { class: flush ? 'Box-body Box-body--flush' : 'Box-body' }, body),
+    h('div', { class: flush ? 'panel-body panel-body--flush' : 'panel-body' }, body),
   );
 }
 
@@ -110,8 +110,8 @@ function pageHead(title, { subtitle = null, actions = null, crumbs = null } = {}
 function blankslate(iconName, title, text, actions = []) {
   return h(
     'div',
-    { class: 'blankslate' },
-    h('div', { class: 'blankslate-icon' }, icon(iconName, 24)),
+    { class: 'empty-state' },
+    h('div', { class: 'empty-icon' }, icon(iconName, 24)),
     h('h2', {}, title),
     h('p', {}, text),
     actions.length ? h('div', { class: 'btn-row btn-row--center' }, actions) : null,
@@ -148,9 +148,9 @@ function copyButton(getText, text = 'Copy') {
 }
 
 function progressBar(rate, variant = 'success') {
-  const bar = h('span', { class: `Progress-item Progress-item--${variant}` });
+  const bar = h('span', { class: `progress-bar progress-bar--${variant}` });
   bar.style.width = `${Math.round((rate ?? 0) * 100)}%`;
-  return h('span', { class: 'Progress', role: 'presentation' }, bar);
+  return h('span', { class: 'progress', role: 'presentation' }, bar);
 }
 
 function formatDate(iso) {
@@ -165,7 +165,7 @@ function flash(message, kind = 'success') {
 function showFlash(message, kind = 'success') {
   const iconName = kind === 'danger' ? 'xCircle' : kind === 'warn' ? 'info' : 'checkCircle';
   const closeBtn = h('button', { type: 'button', class: 'flash-close', 'aria-label': 'Dismiss' }, icon('x'));
-  const el = h('div', { class: `flash flash-${kind}`, role: kind === 'danger' ? 'alert' : 'status' }, icon(iconName), h('span', {}, message), closeBtn);
+  const el = h('div', { class: `notice notice-${kind}`, role: kind === 'danger' ? 'alert' : 'status' }, icon(iconName), h('span', {}, message), closeBtn);
   closeBtn.addEventListener('click', () => el.remove());
   flashRegion.replaceChildren(el);
 }
@@ -195,117 +195,123 @@ function viewOverview() {
   const evals = store.all();
   const ptCount = CASES.filter((c) => c.lang === 'pt').length;
   const checkCount = CASES.reduce((n, c) => n + c.checks.length, 0);
+  const sample = getCase('HA-01');
 
-  const readme = box(
-    'README',
-    'book',
+  const stat = (value, text) => h('div', { class: 'stat' }, h('dt', {}, text), h('dd', {}, value));
+
+  const hero = h(
+    'section',
+    { class: 'hero' },
     h(
       'div',
-      { class: 'markdown' },
-      h('h1', { class: 'page-title', tabindex: '-1' }, 'LLM Evaluation Benchmark'),
+      { class: 'hero-copy' },
+      h('p', { class: 'eyebrow' }, h('span', { class: 'pulse' }), 'Personal project · early stage'),
+      h('h1', { class: 'hero-title page-title', tabindex: '-1' }, 'Evaluate LLM answers, one careful case at a time.'),
       h(
         'p',
-        { class: 'lead' },
-        "A browser-based workbench to benchmark and human-evaluate responses from large language models. Copy a prompt into any model, paste its answer back, run automated checks and score it with a rubric. No API keys, no server, and nothing leaves your browser.",
-      ),
-      h(
-        'div',
-        { class: 'flash flash-warn flash-inline' },
-        icon('info'),
-        h(
-          'span',
-          {},
-          h('strong', {}, 'Early-stage personal project. '),
-          'It ships with no results: every evaluation shown in this app is entered and judged by you.',
-        ),
-      ),
-      h('h2', {}, 'How it works'),
-      h(
-        'ol',
-        { class: 'steps' },
-        h('li', {}, h('strong', {}, 'Pick a case. '), `Browse ${CASES.length} test cases across ${CATEGORIES.length} categories, in English and European Portuguese.`),
-        h('li', {}, h('strong', {}, 'Run it yourself. '), 'Copy the prompt into any chatbot or model and paste the response back here.'),
-        h('li', {}, h('strong', {}, 'Evaluate. '), 'Automated checks flag format and content problems; you score the answer on a five-criterion rubric and give a verdict.'),
-        h('li', {}, h('strong', {}, 'Compare. '), 'Results summarise your evaluations by model and category. Export them as JSON or CSV.'),
+        { class: 'hero-lead' },
+        `${CASES.length} hand-written test cases in English and European Portuguese. Paste a model's response, get instant automated checks, then judge it with a clear rubric. No API keys, no server, and nothing leaves your browser.`,
       ),
       h(
         'div',
         { class: 'btn-row' },
-        h('a', { class: 'btn btn-primary', href: '#/evaluate' }, icon('pencil'), 'Start evaluating'),
-        h('a', { class: 'btn', href: '#/benchmark' }, icon('beaker'), 'Browse the cases'),
-        h('a', { class: 'btn', href: '#/rubric' }, icon('law'), 'Read the rubric'),
+        h('a', { class: 'btn btn-primary btn-lg', href: '#/evaluate' }, icon('pencil'), 'Start evaluating'),
+        h('a', { class: 'btn btn-lg', href: '#/benchmark' }, icon('beaker'), 'Browse the cases'),
+      ),
+    ),
+    h(
+      'div',
+      { class: 'hero-demo', 'aria-hidden': 'true' },
+      h('div', { class: 'term-bar' }, h('span'), h('span'), h('span'), h('em', {}, `${sample.id} · hallucination trap`)),
+      h('pre', { class: 'term-body' }, h('span', { class: 'term-prompt' }, '› '), sample.prompt),
+      h(
+        'ul',
+        { class: 'term-checks' },
+        h('li', { class: 'check-pass' }, icon('checkCircle'), 'Admits it cannot verify the book'),
+        h('li', { class: 'check-fail' }, icon('xCircle'), 'Invents a plot → hallucination'),
       ),
     ),
   );
 
-  const cards = h(
-    'div',
-    { class: 'card-grid' },
-    CATEGORIES.map((cat) => {
-      const inCat = CASES.filter((c) => c.category === cat.id);
-      const pt = inCat.filter((c) => c.lang === 'pt').length;
-      return h(
-        'a',
-        { class: 'card', href: buildHash('benchmark', [], { cat: cat.id }) },
-        h('div', { class: 'card-head' }, h('span', { class: `dot dot--${cat.color}` }), h('strong', {}, cat.name), h('span', { class: 'Counter' }, inCat.length)),
-        h('p', { class: 'card-text' }, cat.description),
-        h('p', { class: 'card-meta' }, `${cat.prefix}-01 – ${cat.prefix}-${String(inCat.length).padStart(2, '0')} · ${pt} in Portuguese`),
-      );
-    }),
+  const stats = h(
+    'dl',
+    { class: 'stats' },
+    stat(CASES.length, 'test cases'),
+    stat(CATEGORIES.length, 'categories'),
+    stat(ptCount, 'in European Portuguese'),
+    stat(checkCount, 'automated checks'),
+    stat(CRITERIA.length, 'rubric criteria'),
   );
 
-  const side = [
-    h(
-      'div',
-      { class: 'side-section' },
-      h('h2', { class: 'side-title' }, 'About'),
-      h('p', {}, 'Browser-based workbench to benchmark and human-evaluate LLM responses (manual entry, no API keys).'),
-      h(
-        'div',
-        { class: 'topics' },
-        ['llm-evaluation', 'hallucination', 'instruction-following', 'reasoning', 'human-evaluation', 'portuguese'].map((t) =>
-          h('span', { class: 'topic' }, t),
-        ),
-      ),
-      h(
-        'ul',
-        { class: 'side-list' },
-        h('li', {}, icon('book'), h('a', { href: '#/about' }, 'About this project')),
-        h('li', {}, icon('law'), h('a', { href: '#/rubric' }, 'Rubric & methodology')),
-        h('li', {}, icon('code'), h('a', { href: REPO_URL, rel: 'noopener' }, 'Source code')),
-        h('li', {}, icon('shield'), 'MIT licence'),
-      ),
-    ),
-    h(
-      'div',
-      { class: 'side-section' },
-      h('h2', { class: 'side-title' }, 'Benchmark'),
-      h(
-        'ul',
-        { class: 'stat-list' },
-        h('li', {}, h('strong', {}, CASES.length), ' test cases'),
-        h('li', {}, h('strong', {}, CATEGORIES.length), ' categories'),
-        h('li', {}, h('strong', {}, ptCount), ' in European Portuguese'),
-        h('li', {}, h('strong', {}, checkCount), ' automated checks'),
-        h('li', {}, h('strong', {}, CRITERIA.length), ' rubric criteria'),
-      ),
-    ),
-    h(
-      'div',
-      { class: 'side-section' },
-      h('h2', { class: 'side-title' }, 'Your data'),
-      h(
-        'p',
-        {},
-        evals.length
-          ? `${evals.length} evaluation${evals.length === 1 ? '' : 's'} saved in this browser.`
-          : 'No evaluations yet. They are saved only in this browser.',
-      ),
-      evals.length ? h('a', { href: '#/results' }, 'View results →') : null,
-    ),
+  const steps = [
+    ['Pick a case', `Browse ${CASES.length} cases across ${CATEGORIES.length} categories.`],
+    ['Run it yourself', 'Copy the prompt into any chatbot or model and paste the answer back.'],
+    ['Evaluate', 'Automated checks flag problems; you score five criteria and give a verdict.'],
+    ['Compare', 'See results by model and category. Export as JSON or CSV.'],
   ];
 
-  return layout([readme, h('h2', { class: 'section-title' }, 'Categories'), cards], side);
+  const howItWorks = h(
+    'section',
+    { class: 'section' },
+    h('h2', { class: 'section-title' }, 'How it works'),
+    h(
+      'ol',
+      { class: 'steps-grid' },
+      steps.map(([title, text], i) => h('li', { class: 'step' }, h('span', { class: 'step-num' }, i + 1), h('strong', {}, title), h('p', {}, text))),
+    ),
+  );
+
+  const categories = h(
+    'section',
+    { class: 'section' },
+    h('h2', { class: 'section-title' }, 'Four categories'),
+    h(
+      'div',
+      { class: 'card-grid' },
+      CATEGORIES.map((cat) => {
+        const inCat = CASES.filter((c) => c.category === cat.id);
+        const pt = inCat.filter((c) => c.lang === 'pt').length;
+        return h(
+          'a',
+          { class: `card cat-${cat.id}`, href: buildHash('benchmark', [], { cat: cat.id }) },
+          h('div', { class: 'card-head' }, h('strong', {}, cat.name), h('span', { class: 'count' }, inCat.length)),
+          h('p', { class: 'card-text' }, cat.description),
+          h('p', { class: 'card-meta' }, `${cat.prefix}-01 → ${cat.prefix}-${String(inCat.length).padStart(2, '0')} · ${pt} in pt-PT`),
+        );
+      }),
+    ),
+  );
+
+  const honesty = h(
+    'section',
+    { class: 'section split' },
+    h(
+      'div',
+      { class: 'notice notice-warn' },
+      icon('info'),
+      h(
+        'div',
+        {},
+        h('strong', {}, 'No results included. '),
+        'This app ships with no evaluations. Everything in Results is entered and judged by you. It is a small learning project, built with AI coding assistance, not a validated research benchmark.',
+      ),
+    ),
+    h(
+      'div',
+      { class: 'notice' },
+      icon('shield'),
+      h(
+        'div',
+        {},
+        h('strong', {}, 'Your data. '),
+        evals.length
+          ? h('span', {}, `${evals.length} evaluation${evals.length === 1 ? '' : 's'} saved in this browser. `, h('a', { href: '#/results' }, 'View results →'))
+          : 'No evaluations yet. They are stored only in this browser.',
+      ),
+    ),
+  );
+
+  return frag(hero, stats, howItWorks, categories, honesty);
 }
 
 // ───────────────────────────────── Benchmark ────────────────────────────────
@@ -339,7 +345,7 @@ function viewBenchmark(query) {
       'button',
       { type: 'button', class: 'segmented-item', 'aria-pressed': String(state.cat === cat.id), dataset: { cat: cat.id } },
       cat.name,
-      h('span', { class: 'Counter' }, count),
+      h('span', { class: 'count' }, count),
     );
     btn.addEventListener('click', () => {
       state.cat = cat.id;
@@ -360,7 +366,7 @@ function viewBenchmark(query) {
     const count = evaluatedIds.has(c.id) ? evaluationsFor(c.id).length : 0;
     return h(
       'li',
-      { class: 'Box-row case-row' },
+      { class: `panel-row case-row cat-${c.category}` },
       h(
         'span',
         { class: count ? 'row-icon row-icon--done' : 'row-icon', title: count ? 'Evaluated' : 'Not evaluated yet' },
@@ -403,16 +409,16 @@ function viewBenchmark(query) {
     listContainer.replaceChildren(
       h(
         'section',
-        { class: 'Box' },
+        { class: 'panel' },
         h(
           'div',
-          { class: 'Box-header' },
-          h('h2', { class: 'Box-title' }, icon('beaker'), `${shown.length} case${shown.length === 1 ? '' : 's'}`),
-          clearBtn ? h('div', { class: 'Box-actions' }, clearBtn) : null,
+          { class: 'panel-head' },
+          h('h2', { class: 'panel-title' }, icon('beaker'), `${shown.length} case${shown.length === 1 ? '' : 's'}`),
+          clearBtn ? h('div', { class: 'panel-actions' }, clearBtn) : null,
         ),
         shown.length
-          ? h('ul', { class: 'Box-list' }, shown.map(row))
-          : h('div', { class: 'Box-body' }, blankslate('search', 'No cases match', 'Try a different search or clear the filters.')),
+          ? h('ul', { class: 'panel-list' }, shown.map(row))
+          : h('div', { class: 'panel-body' }, blankslate('search', 'No cases match', 'Try a different search or clear the filters.')),
       ),
     );
     history.replaceState(null, '', buildHash('benchmark', [], { cat: state.cat === 'all' ? '' : state.cat, lang: state.lang === 'all' ? '' : state.lang, q: state.q.trim() }));
@@ -430,7 +436,7 @@ function viewBenchmark(query) {
   update();
 
   return frag(
-    pageHead('Benchmark', {
+    pageHead('Test cases', {
       subtitle: `${CASES.length} cases. Each has a prompt, a reference answer, automated checks and notes for the human evaluator.`,
       actions: h('a', { class: 'btn btn-primary', href: '#/evaluate' }, icon('pencil'), 'Evaluate'),
     }),
@@ -456,14 +462,14 @@ function viewCase(id) {
     box('Prompt', 'list', h('pre', { class: 'prompt' }, c.prompt), { actions: copyButton(() => c.prompt, 'Copy prompt') }),
     h(
       'details',
-      { class: 'Box details-box' },
+      { class: 'panel details-box' },
       h(
         'summary',
-        { class: 'Box-header' },
-        h('h2', { class: 'Box-title' }, icon('book'), 'Reference answer'),
+        { class: 'panel-head' },
+        h('h2', { class: 'panel-title' }, icon('book'), 'Reference answer'),
         h('span', { class: 'muted small' }, 'Hidden to avoid biasing your evaluation. Click to show.'),
       ),
-      h('div', { class: 'Box-body' }, h('p', { class: 'reference' }, c.reference)),
+      h('div', { class: 'panel-body' }, h('p', { class: 'reference' }, c.reference)),
     ),
     box(
       `Automated checks (${c.checks.length})`,
@@ -527,7 +533,7 @@ function viewCase(id) {
 
   return frag(
     pageHead(h('span', {}, c.title, ' ', h('span', { class: 'title-id' }, c.id)), {
-      crumbs: [h('a', { href: '#/benchmark' }, 'Benchmark'), h('span', { 'aria-hidden': 'true' }, ' / '), h('a', { href: buildHash('benchmark', [], { cat: c.category }) }, cat.name)],
+      crumbs: [h('a', { href: '#/benchmark' }, 'Cases'), h('span', { 'aria-hidden': 'true' }, ' / '), h('a', { href: buildHash('benchmark', [], { cat: c.category }) }, cat.name)],
     }),
     layout(mainCol, side),
   );
@@ -624,7 +630,7 @@ function viewEvaluate(query) {
         return h(
           'fieldset',
           { class: 'rubric-row' },
-          h('legend', {}, crit.name, isFocus ? label('Focus', 'accent', 'Label--small') : null),
+          h('legend', {}, crit.name, isFocus ? label('Focus', 'accent', 'tag--small') : null),
           h('p', { class: 'note' }, crit.description),
           h('div', { class: 'radio-group' }, options),
           hint,
@@ -732,7 +738,7 @@ function viewEvaluate(query) {
     const errors = collectErrors();
     if (errors.length) {
       errorBox.replaceChildren(
-        h('div', { class: 'flash flash-danger' }, icon('xCircle'), h('div', {}, h('strong', {}, 'Please fix the following:'), h('ul', {}, errors.map((e) => h('li', {}, e))))),
+        h('div', { class: 'notice notice-danger' }, icon('xCircle'), h('div', {}, h('strong', {}, 'Please fix the following:'), h('ul', {}, errors.map((e) => h('li', {}, e))))),
       );
       errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
@@ -756,7 +762,7 @@ function viewEvaluate(query) {
       if (editing) store.update(record);
       else store.add(record);
     } catch (err) {
-      errorBox.replaceChildren(h('div', { class: 'flash flash-danger' }, icon('xCircle'), h('span', {}, `Could not save: ${err.message}`)));
+      errorBox.replaceChildren(h('div', { class: 'notice notice-danger' }, icon('xCircle'), h('span', {}, `Could not save: ${err.message}`)));
       return;
     }
     prefSet(LAST_MODEL_KEY, record.model);
@@ -890,10 +896,10 @@ function viewResults(query) {
       pageHead('Results'),
       h(
         'section',
-        { class: 'Box' },
+        { class: 'panel' },
         h(
           'div',
-          { class: 'Box-body' },
+          { class: 'panel-body' },
           blankslate(
             'graph',
             'No evaluations yet',
@@ -1017,7 +1023,7 @@ function viewResults(query) {
 function storageNote() {
   return store.persistent
     ? null
-    : h('div', { class: 'flash flash-warn' }, icon('info'), h('span', {}, 'Browser storage is unavailable, so evaluations are kept only until you close this tab. Export them to keep a copy.'));
+    : h('div', { class: 'notice notice-warn' }, icon('info'), h('span', {}, 'Browser storage is unavailable, so evaluations are kept only until you close this tab. Export them to keep a copy.'));
 }
 
 // ────────────────────────────── Rubric & About ──────────────────────────────
@@ -1137,8 +1143,8 @@ function viewAbout() {
 function viewNotFound() {
   return h(
     'section',
-    { class: 'Box' },
-    h('div', { class: 'Box-body' }, blankslate('search', 'Page not found', 'That page does not exist.', [h('a', { class: 'btn', href: '#/' }, 'Go to the overview')])),
+    { class: 'panel' },
+    h('div', { class: 'panel-body' }, blankslate('search', 'Page not found', 'That page does not exist.', [h('a', { class: 'btn', href: '#/' }, 'Go to the overview')])),
   );
 }
 
@@ -1146,7 +1152,7 @@ function viewNotFound() {
 
 const TITLES = {
   overview: 'Overview',
-  benchmark: 'Benchmark',
+  benchmark: 'Cases',
   case: 'Case',
   evaluate: 'Evaluate',
   results: 'Results',
@@ -1188,7 +1194,7 @@ function render() {
   main.replaceChildren(view);
 
   const active = NAV_ROUTE[route] ?? route;
-  for (const link of document.querySelectorAll('.UnderlineNav-item')) {
+  for (const link of document.querySelectorAll('.topnav-item')) {
     if (link.dataset.route === active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }

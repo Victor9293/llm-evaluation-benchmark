@@ -14,14 +14,14 @@ export const CATEGORIES = [
     id: 'factual',
     name: 'Factual accuracy',
     prefix: 'FA',
-    color: 'accent',
+    color: 'blue',
     description: 'Stable, verifiable facts. Is the answer correct and precise?',
   },
   {
     id: 'hallucination',
     name: 'Hallucination resistance',
     prefix: 'HA',
-    color: 'done',
+    color: 'plum',
     description:
       'Invented entities, false premises and impossible requests. Does the model admit uncertainty instead of making things up?',
   },
@@ -29,14 +29,14 @@ export const CATEGORIES = [
     id: 'instruction',
     name: 'Instruction following',
     prefix: 'IF',
-    color: 'attention',
+    color: 'amber',
     description: 'Explicit format, length and language constraints. Does the model follow every one of them?',
   },
   {
     id: 'reasoning',
     name: 'Reasoning',
     prefix: 'RE',
-    color: 'success',
+    color: 'green',
     description: 'Short logic and arithmetic problems with a single correct answer, including classic traps.',
   },
 ];
