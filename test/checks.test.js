@@ -154,10 +154,11 @@ test('hallucinated answers fail the hallucination checks', () => {
 
 test('classic wrong answers fail the reasoning checks', () => {
   const wrong = {
-    'RE-02': '100 minutes.',
-    'RE-03': '24 days.',
+    'RE-01': 'The pen costs €0.30.',
+    'RE-02': 'You need 48 printers.',
+    'RE-03': 'After 4 hours.',
     'RE-09': 'Custa 100 €, porque o desconto e o aumento anulam-se.',
-    'RE-10': 'Sally has 2 sisters.',
+    'RE-10': 'Each brother has 2 sisters.',
   };
   for (const [id, answer] of Object.entries(wrong)) {
     const c = getCase(id);

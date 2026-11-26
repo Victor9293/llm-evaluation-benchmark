@@ -1737,6 +1737,82 @@ textarea.form-control {
   padding-bottom: 32px;
 }
 
+/* ───────────── compare mode ───────────── */
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.compare-grid .panel + .panel {
+  margin-top: 0;
+}
+
+.compare-side--a {
+  border-top: 3px solid var(--blue);
+}
+
+.compare-side--b {
+  border-top: 3px solid var(--plum);
+}
+
+.side-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-family: var(--mono);
+  font-weight: 700;
+  color: #fff;
+  border-radius: 8px;
+}
+
+.compare-side--a .side-badge {
+  background: var(--blue);
+}
+
+.compare-side--b .side-badge {
+  background: var(--plum);
+}
+
+.textarea-compare {
+  min-height: 200px;
+}
+
+.compare-checks {
+  margin-top: 12px;
+}
+
+.radio-group--pref .radio-pill span {
+  gap: 6px;
+}
+
+.radio-pill--a input:checked + span {
+  background: var(--blue);
+}
+
+.radio-pill--b input:checked + span {
+  background: var(--plum);
+}
+
+.radio-pill--tie input:checked + span {
+  color: var(--bg);
+  background: var(--fg);
+}
+
+.rationale-cell {
+  min-width: 240px;
+  max-width: 420px;
+  font-size: 14px;
+}
+
+.layout-side .btn-block + .btn-block {
+  margin-top: 8px;
+}
+
 /* ───────────── responsive ───────────── */
 
 @media (max-width: 1100px) {
@@ -1771,7 +1847,8 @@ textarea.form-control {
 
 @media (max-width: 960px) {
   .layout,
-  .hero {
+  .hero,
+  .compare-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

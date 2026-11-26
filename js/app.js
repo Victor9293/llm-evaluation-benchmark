@@ -9,8 +9,19 @@ import {
   summarizeByCategory,
   formatPercent,
   formatScore,
+  PREFERENCES,
+  summarizeComparisons,
 } from './scoring.js';
-import { createStore, newId, parseImport, toCSV, toJSON } from './storage.js';
+import {
+  COMPARISONS_KEY,
+  createStore,
+  newId,
+  parseImport,
+  toCSV,
+  toComparisonsCSV,
+  toJSON,
+  validateComparison,
+} from './storage.js';
 import { parseHash, buildHash, isAppHash } from './router.js';
 import { h, frag } from './dom.js';
 import { icon } from './icons.js';
@@ -19,6 +30,7 @@ export const REPO_URL = 'https://github.com/Victor9293/llm-evaluation-benchmark'
 const LAST_MODEL_KEY = 'leb.lastModel';
 
 const store = createStore(safeLocalStorage());
+const comparisonStore = createStore(safeLocalStorage(), { key: COMPARISONS_KEY, validate: validateComparison });
 const CASE_IDS = new Set(CASES.map((c) => c.id));
 const main = document.getElementById('main');
 const flashRegion = document.getElementById('flash');
@@ -246,7 +258,7 @@ function viewOverview() {
   const steps = [
     ['Pick a case', `Browse ${CASES.length} cases across ${CATEGORIES.length} categories.`],
     ['Run it yourself', 'Copy the prompt into any chatbot or model and paste the answer back.'],
-    ['Evaluate', 'Automated checks flag problems; you score five criteria and give a verdict.'],
+    ['Evaluate', 'Score one answer on five criteria, or compare two answers side by side.'],
     ['Compare', 'See results by model and category. Export as JSON or CSV.'],
   ];
 
@@ -499,6 +511,7 @@ function viewCase(id) {
 
   const side = [
     h('a', { class: 'btn btn-primary btn-block', href: buildHash('evaluate', [], { case: c.id }) }, icon('pencil'), 'Evaluate this case'),
+    h('a', { class: 'btn btn-block', href: buildHash('compare', [], { case: c.id }) }, icon('columns'), 'Compare two responses'),
     h(
       'div',
       { class: 'side-section' },
@@ -854,6 +867,237 @@ function viewEvaluate(query) {
   );
 }
 
+// ───────────────────────────────── Compare ──────────────────────────────────
+
+const MIRROR = { a_much: 'b_much', a_slight: 'b_slight', tie: 'tie', b_slight: 'a_slight', b_much: 'a_much' };
+
+function viewCompare(query) {
+  const editing = query.edit ? comparisonStore.get(query.edit) : null;
+  if (query.edit && !editing) {
+    return blankslate('info', 'Comparison not found', 'It may have been deleted.', [h('a', { class: 'btn', href: '#/results' }, 'Back to results')]);
+  }
+  let current = getCase(editing?.caseId ?? query.case) ?? CASES[0];
+
+  const caseSelect = h(
+    'select',
+    { class: 'form-select', id: 'case-select', disabled: Boolean(editing), value: current.id },
+    CATEGORIES.map((cat) =>
+      h('optgroup', { label: cat.name }, CASES.filter((c) => c.category === cat.id).map((c) => h('option', { value: c.id }, `${c.id} · ${c.title}`))),
+    ),
+  );
+  const promptPre = h('pre', { class: 'prompt' });
+  const caseMeta = h('div', { class: 'row-meta' });
+
+  const knownModels = [
+    ...new Set([...store.all().map((e) => e.model), ...comparisonStore.all().flatMap((c) => [c.modelA, c.modelB])]),
+  ].sort();
+  const modelList = h('datalist', { id: 'cmp-model-list' }, knownModels.map((m) => h('option', { value: m })));
+
+  function side(letter, initModel, initResponse) {
+    const upper = letter.toUpperCase();
+    const modelInput = h('input', {
+      type: 'text',
+      class: 'form-control',
+      id: `model-${letter}`,
+      list: 'cmp-model-list',
+      maxlength: '100',
+      autocomplete: 'off',
+      placeholder: `Model ${upper}`,
+      value: initModel,
+    });
+    const responseInput = h('textarea', {
+      class: 'form-control textarea-compare',
+      id: `response-${letter}`,
+      rows: '10',
+      maxlength: '50000',
+      placeholder: `Paste response ${upper} here, exactly as it was given.`,
+      value: initResponse,
+    });
+    const checksOut = h('div', { class: 'compare-checks' });
+    const update = () => {
+      const text = responseInput.value;
+      if (!text.trim()) {
+        checksOut.replaceChildren(h('p', { class: 'note' }, 'Automated checks run as soon as you paste a response.'));
+        return;
+      }
+      const { results, passed, total } = runChecks(current.checks, text);
+      checksOut.replaceChildren(
+        h('p', { class: 'checks-count' }, h('strong', {}, `${passed} / ${total}`), ' checks passed'),
+        h(
+          'ul',
+          { class: 'check-results' },
+          results.map((r) =>
+            h('li', { class: r.pass ? 'check-pass' : 'check-fail' }, icon(r.pass ? 'checkCircle' : 'xCircle'), h('span', {}, r.label, h('span', { class: 'check-detail' }, r.detail))),
+          ),
+        ),
+      );
+    };
+    responseInput.addEventListener('input', update);
+    const panel = h(
+      'section',
+      { class: `panel compare-side compare-side--${letter}` },
+      h('div', { class: 'panel-head' }, h('h2', { class: 'panel-title' }, h('span', { class: 'side-badge' }, upper), `Response ${upper}`)),
+      h(
+        'div',
+        { class: 'panel-body' },
+        h('label', { class: 'form-label', for: `model-${letter}` }, 'Model'),
+        modelInput,
+        h('label', { class: 'form-label', for: `response-${letter}` }, 'Response'),
+        responseInput,
+        checksOut,
+      ),
+    );
+    return { panel, modelInput, responseInput, update };
+  }
+
+  const A = side('a', editing?.modelA ?? query.modelA ?? '', editing?.responseA ?? '');
+  const B = side('b', editing?.modelB ?? query.modelB ?? '', editing?.responseB ?? '');
+
+  let preference = editing?.preference ?? '';
+  const prefInputs = new Map();
+  const prefGroup = h(
+    'div',
+    { class: 'radio-group radio-group--pref' },
+    PREFERENCES.map((p) => {
+      const input = h('input', { type: 'radio', name: 'preference', value: p.id, class: 'sr-only', checked: preference === p.id });
+      input.addEventListener('change', () => {
+        preference = p.id;
+      });
+      prefInputs.set(p.id, input);
+      return h('label', { class: `radio-pill radio-pill--${p.winner}`, title: p.label }, input, h('span', {}, h('strong', { class: 'mono' }, p.short), p.label));
+    }),
+  );
+
+  const rationaleInput = h('textarea', {
+    class: 'form-control',
+    id: 'rationale',
+    rows: '4',
+    maxlength: '5000',
+    placeholder: 'Which response is better, and why? Quote the specific error, broken constraint or invented detail that decided it.',
+    value: editing?.rationale ?? '',
+  });
+  const rationaleStats = h('p', { class: 'note' });
+  const updateRationaleStats = () => {
+    const n = rationaleInput.value.trim() ? rationaleInput.value.trim().split(/\s+/).length : 0;
+    rationaleStats.textContent = `${n} word${n === 1 ? '' : 's'} · aim for 2–4 specific sentences`;
+  };
+  rationaleInput.addEventListener('input', updateRationaleStats);
+  updateRationaleStats();
+
+  const swapBtn = h('button', { type: 'button', class: 'btn btn-sm' }, icon('swap'), 'Swap A and B');
+  swapBtn.addEventListener('click', () => {
+    [A.modelInput.value, B.modelInput.value] = [B.modelInput.value, A.modelInput.value];
+    [A.responseInput.value, B.responseInput.value] = [B.responseInput.value, A.responseInput.value];
+    if (preference) {
+      preference = MIRROR[preference];
+      prefInputs.get(preference).checked = true;
+    }
+    A.update();
+    B.update();
+  });
+
+  const errorBox = h('div', { class: 'form-errors', role: 'alert' });
+
+  function updateCase() {
+    promptPre.textContent = current.prompt;
+    caseMeta.replaceChildren(
+      h('a', { class: 'mono', href: buildHash('case', [current.id]) }, current.id),
+      categoryLabel(current.category),
+      langLabel(current.lang),
+      h('span', {}, current.difficulty),
+    );
+    A.update();
+    B.update();
+  }
+
+  caseSelect.addEventListener('change', () => {
+    current = getCase(caseSelect.value) ?? current;
+    history.replaceState(null, '', buildHash('compare', [], { case: current.id }));
+    updateCase();
+  });
+
+  function save() {
+    const errors = [];
+    if (!A.modelInput.value.trim() || !B.modelInput.value.trim()) errors.push('Enter both model names.');
+    if (!A.responseInput.value.trim() || !B.responseInput.value.trim()) errors.push('Paste both responses.');
+    if (!preference) errors.push('Choose which response is better (or "About the same").');
+    const words = rationaleInput.value.trim() ? rationaleInput.value.trim().split(/\s+/).length : 0;
+    if (words < 8) errors.push('Write a rationale of at least 8 words explaining your choice.');
+    if (errors.length) {
+      errorBox.replaceChildren(
+        h('div', { class: 'notice notice-danger' }, icon('xCircle'), h('div', {}, h('strong', {}, 'Please fix the following:'), h('ul', {}, errors.map((e) => h('li', {}, e))))),
+      );
+      errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    errorBox.replaceChildren();
+    const ca = runChecks(current.checks, A.responseInput.value);
+    const cb = runChecks(current.checks, B.responseInput.value);
+    const now = new Date().toISOString();
+    const record = {
+      id: editing?.id ?? newId(),
+      caseId: current.id,
+      modelA: A.modelInput.value.trim(),
+      modelB: B.modelInput.value.trim(),
+      responseA: A.responseInput.value,
+      responseB: B.responseInput.value,
+      checksA: { passed: ca.passed, total: ca.total },
+      checksB: { passed: cb.passed, total: cb.total },
+      preference,
+      rationale: rationaleInput.value.trim(),
+      createdAt: editing?.createdAt ?? now,
+      ...(editing ? { updatedAt: now } : {}),
+    };
+    try {
+      if (editing) comparisonStore.update(record);
+      else comparisonStore.add(record);
+    } catch (err) {
+      errorBox.replaceChildren(h('div', { class: 'notice notice-danger' }, icon('xCircle'), h('span', {}, `Could not save: ${err.message}`)));
+      return;
+    }
+    flash(editing ? 'Comparison updated.' : 'Comparison saved.');
+    navigate('#/results');
+  }
+
+  const saveBtn = h('button', { type: 'button', class: 'btn btn-primary' }, icon('check'), editing ? 'Save changes' : 'Save comparison');
+  saveBtn.addEventListener('click', save);
+
+  updateCase();
+
+  return frag(
+    pageHead(editing ? 'Edit comparison' : 'Compare two responses', {
+      subtitle: 'Run the same prompt in two models (or twice in one), paste both answers and decide which is better. This mirrors the side-by-side ranking used in AI training work.',
+    }),
+    box(
+      'Case',
+      'beaker',
+      frag(
+        h('label', { class: 'form-label', for: 'case-select' }, 'Test case'),
+        caseSelect,
+        caseMeta,
+        h('div', { class: 'prompt-head' }, h('span', { class: 'form-label' }, 'Prompt'), copyButton(() => current.prompt, 'Copy prompt')),
+        promptPre,
+      ),
+    ),
+    h('div', { class: 'compare-grid' }, A.panel, B.panel),
+    modelList,
+    box(
+      'Your judgement',
+      'law',
+      frag(
+        h('fieldset', { class: 'rubric-row' }, h('legend', {}, 'Which response is better?'), prefGroup),
+        h('label', { class: 'form-label', for: 'rationale' }, 'Rationale'),
+        rationaleInput,
+        rationaleStats,
+        h('p', { class: 'note' }, icon('info'), ' To avoid position bias, read both answers fully before choosing, and swap which model is A from time to time.'),
+      ),
+      { actions: swapBtn },
+    ),
+    errorBox,
+    h('div', { class: 'btn-row form-actions' }, saveBtn, h('a', { class: 'btn btn-invisible', href: editing ? '#/results' : '#/benchmark' }, 'Cancel')),
+  );
+}
+
 // ───────────────────────────────── Results ──────────────────────────────────
 
 function importButton(onDone) {
@@ -868,50 +1112,41 @@ function importButton(onDone) {
       return;
     }
     const text = await file.text();
-    const { valid, rejected, error } = parseImport(text, { caseIds: CASE_IDS });
+    const { valid, rejected, comparisons, comparisonsRejected, error } = parseImport(text, { caseIds: CASE_IDS });
     if (error) {
       showFlash(error, 'danger');
       return;
     }
     let result;
+    let cmpResult;
     try {
       result = store.importMany(valid);
+      cmpResult = comparisonStore.importMany(comparisons);
     } catch (err) {
       showFlash(`Import failed: ${err.message}`, 'danger');
       return;
     }
     const parts = [`Imported ${result.added} evaluation${result.added === 1 ? '' : 's'}`];
-    if (result.skipped) parts.push(`${result.skipped} already present`);
-    if (rejected) parts.push(`${rejected} invalid record${rejected === 1 ? '' : 's'} ignored`);
-    flash(`${parts.join(' · ')}.`, rejected ? 'warn' : 'success');
+    if (cmpResult.added) parts.push(`${cmpResult.added} comparison${cmpResult.added === 1 ? '' : 's'}`);
+    const skipped = result.skipped + cmpResult.skipped;
+    if (skipped) parts.push(`${skipped} already present`);
+    const bad = rejected + comparisonsRejected;
+    if (bad) parts.push(`${bad} invalid record${bad === 1 ? '' : 's'} ignored`);
+    flash(`${parts.join(' · ')}.`, bad ? 'warn' : 'success');
     onDone();
   });
   return frag(btn, input);
 }
 
-function viewResults(query) {
-  const all = store.all();
-  if (!all.length) {
-    return frag(
-      pageHead('Results'),
-      h(
-        'section',
-        { class: 'panel' },
-        h(
-          'div',
-          { class: 'panel-body' },
-          blankslate(
-            'graph',
-            'No evaluations yet',
-            'This app ships with no results. Everything that appears here is entered and judged by you, and stays in this browser.',
-            [h('a', { class: 'btn btn-primary', href: '#/evaluate' }, icon('pencil'), 'Start evaluating'), importButton(render)],
-          ),
-        ),
-      ),
-      storageNote(),
-    );
-  }
+function resultsTable(head, rows) {
+  return h(
+    'div',
+    { class: 'table-wrap' },
+    h('table', { class: 'data-table' }, h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col' }, t)))), h('tbody', {}, rows)),
+  );
+}
 
+function evaluationSections(all, query) {
   const models = [...new Set(all.map((e) => e.model))].sort((a, b) => a.localeCompare(b));
   const selected = models.includes(query.model) ? query.model : 'all';
   const filtered = selected === 'all' ? all : all.filter((e) => e.model === selected);
@@ -975,46 +1210,129 @@ function viewResults(query) {
       );
     });
 
+  return [
+    box('Evaluations by model', 'graph', resultsTable(['Model', 'Evaluations', 'Cases covered', 'Checks passed', 'Rubric avg (1–5)', 'Verdicts'], modelRows), { flush: true }),
+    box(
+      'Evaluations by category',
+      'beaker',
+      resultsTable(['Category', 'Evaluations', 'Cases covered', 'Checks passed', 'Rubric avg (1–5)', 'Pass / Partial / Fail'], catRows),
+      { flush: true, actions: modelFilter },
+    ),
+    box(`Evaluations (${filtered.length})`, 'list', resultsTable(['Date', 'Case', 'Model', 'Checks', 'Rubric', 'Verdict', ''], evalRows), { flush: true }),
+  ];
+}
+
+function preferenceLabel(id) {
+  const p = PREFERENCES.find((x) => x.id === id);
+  const variant = p?.winner === 'a' ? 'blue' : p?.winner === 'b' ? 'plum' : 'secondary';
+  return label(p?.short ?? id, variant, 'tag--mono');
+}
+
+function comparisonSections(cmps) {
+  const headRows = summarizeComparisons(cmps).map((s) =>
+    h(
+      'tr',
+      {},
+      h('th', { scope: 'row' }, s.model),
+      h('td', { class: 'num' }, s.comparisons),
+      h('td', { class: 'num' }, s.wins),
+      h('td', { class: 'num' }, s.ties),
+      h('td', { class: 'num' }, s.losses),
+      h('td', {}, h('div', { class: 'cell-bar' }, h('span', { class: 'num' }, formatPercent(s.winRate)), progressBar(s.winRate))),
+    ),
+  );
+
+  const rows = [...cmps]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((c) => {
+      const del = h('button', { type: 'button', class: 'btn btn-sm btn-danger-outline', 'aria-label': `Delete comparison of ${c.caseId}` }, icon('trash'));
+      del.addEventListener('click', () => {
+        if (confirm(`Delete the comparison of ${c.caseId} (${c.modelA} vs ${c.modelB})?`)) {
+          comparisonStore.remove(c.id);
+          flash('Comparison deleted.');
+          render();
+        }
+      });
+      return h(
+        'tr',
+        {},
+        h('td', { class: 'nowrap muted' }, formatDate(c.createdAt)),
+        h('td', {}, h('a', { class: 'mono', href: buildHash('case', [c.caseId]) }, c.caseId)),
+        h('td', {}, h('span', {}, c.modelA), h('span', { class: 'muted' }, ' vs '), h('span', {}, c.modelB)),
+        h('td', {}, preferenceLabel(c.preference)),
+        h('td', { class: 'rationale-cell' }, c.rationale),
+        h('td', { class: 'actions' }, h('a', { class: 'btn btn-sm', href: buildHash('compare', [], { edit: c.id }), 'aria-label': `Edit comparison of ${c.caseId}` }, icon('pencil')), del),
+      );
+    });
+
+  return [
+    box('Head-to-head by model', 'columns', resultsTable(['Model', 'Comparisons', 'Wins', 'Ties', 'Losses', 'Win rate'], headRows), { flush: true }),
+    box(`Comparisons (${cmps.length})`, 'list', resultsTable(['Date', 'Case', 'A vs B', 'Preference', 'Rationale', ''], rows), { flush: true }),
+  ];
+}
+
+function viewResults(query) {
+  const all = store.all();
+  const cmps = comparisonStore.all();
+  if (!all.length && !cmps.length) {
+    return frag(
+      pageHead('Results'),
+      h(
+        'section',
+        { class: 'panel' },
+        h(
+          'div',
+          { class: 'panel-body' },
+          blankslate(
+            'graph',
+            'No evaluations yet',
+            'This app ships with no results. Everything that appears here is entered and judged by you, and stays in this browser.',
+            [
+              h('a', { class: 'btn btn-primary', href: '#/evaluate' }, icon('pencil'), 'Start evaluating'),
+              h('a', { class: 'btn', href: '#/compare' }, icon('columns'), 'Compare two responses'),
+              importButton(render),
+            ],
+          ),
+        ),
+      ),
+      storageNote(),
+    );
+  }
+
+  const stamp = new Date().toISOString().slice(0, 10);
   const exportJson = h('button', { type: 'button', class: 'btn' }, icon('download'), 'JSON');
-  exportJson.addEventListener('click', () => download(`llm-eval-results-${new Date().toISOString().slice(0, 10)}.json`, toJSON(store.all()), 'application/json'));
-  const exportCsv = h('button', { type: 'button', class: 'btn' }, icon('download'), 'CSV');
-  exportCsv.addEventListener('click', () => download(`llm-eval-results-${new Date().toISOString().slice(0, 10)}.csv`, `﻿${toCSV(store.all(), CASES)}`, 'text/csv;charset=utf-8'));
+  exportJson.addEventListener('click', () => download(`llm-eval-results-${stamp}.json`, toJSON(store.all(), new Date(), comparisonStore.all()), 'application/json'));
+  const exportCsv = all.length ? h('button', { type: 'button', class: 'btn' }, icon('download'), 'CSV') : null;
+  exportCsv?.addEventListener('click', () => download(`llm-eval-results-${stamp}.csv`, `﻿${toCSV(store.all(), CASES)}`, 'text/csv;charset=utf-8'));
+  const exportCmpCsv = cmps.length ? h('button', { type: 'button', class: 'btn' }, icon('download'), 'Comparisons CSV') : null;
+  exportCmpCsv?.addEventListener('click', () => download(`llm-eval-comparisons-${stamp}.csv`, `﻿${toComparisonsCSV(comparisonStore.all(), CASES)}`, 'text/csv;charset=utf-8'));
   const clearAll = h('button', { type: 'button', class: 'btn btn-danger-outline' }, icon('trash'), 'Delete all');
   clearAll.addEventListener('click', () => {
-    const n = store.all().length;
-    if (confirm(`Delete all ${n} evaluations stored in this browser? This cannot be undone. Export them first if you want a backup.`)) {
+    const n = store.all().length + comparisonStore.all().length;
+    if (confirm(`Delete all ${n} records (evaluations and comparisons) stored in this browser? This cannot be undone. Export them first if you want a backup.`)) {
       store.clear();
-      flash('All evaluations deleted.');
+      comparisonStore.clear();
+      flash('All records deleted.');
       render();
     }
   });
 
-  const table = (head, rows) =>
-    h('div', { class: 'table-wrap' }, h('table', { class: 'data-table' }, h('thead', {}, h('tr', {}, head.map((t) => h('th', { scope: 'col' }, t)))), h('tbody', {}, rows)));
+  const parts = [];
+  if (all.length) parts.push(`${all.length} evaluation${all.length === 1 ? '' : 's'}`);
+  if (cmps.length) parts.push(`${cmps.length} comparison${cmps.length === 1 ? '' : 's'}`);
 
   return frag(
     pageHead('Results', {
-      subtitle: `${all.length} evaluation${all.length === 1 ? '' : 's'} across ${models.length} model${models.length === 1 ? '' : 's'}, entered in this browser.`,
-      actions: [exportJson, exportCsv, importButton(render), clearAll],
+      subtitle: `${parts.join(' and ')}, entered in this browser.`,
+      actions: [exportJson, exportCsv, exportCmpCsv, importButton(render), clearAll],
     }),
-    box('By model', 'graph', table(['Model', 'Evaluations', 'Cases covered', 'Checks passed', 'Rubric avg (1–5)', 'Verdicts'], modelRows), { flush: true }),
-    box(
-      'By category',
-      'beaker',
-      table(['Category', 'Evaluations', 'Cases covered', 'Checks passed', 'Rubric avg (1–5)', 'Pass / Partial / Fail'], catRows),
-      { flush: true, actions: modelFilter },
-    ),
-    box(
-      `Evaluations (${filtered.length})`,
-      'list',
-      table(['Date', 'Case', 'Model', 'Checks', 'Rubric', 'Verdict', ''], evalRows),
-      { flush: true },
-    ),
+    all.length ? evaluationSections(all, query) : null,
+    cmps.length ? comparisonSections(cmps) : null,
     h(
       'p',
       { class: 'note' },
       icon('info'),
-      ' These numbers summarise your own manual evaluations. Small samples from a single evaluator are not statistically meaningful; treat them as notes, not as a leaderboard.',
+      ' These numbers summarise your own manual judgements. Small samples from a single evaluator are not statistically meaningful; treat them as notes, not as a leaderboard.',
     ),
     storageNote(),
   );
@@ -1074,6 +1392,15 @@ function viewRubric() {
     pageHead('Rubric & methodology', { subtitle: 'How responses are judged, and what the numbers can and cannot tell you.' }),
     box('Human rubric', 'law', frag(h('p', {}, 'Each response is scored from 1 to 5 on five criteria. Scores of 2 and 4 sit between the anchors. Choose N/A when a criterion does not apply; it is then left out of the average.'), criteriaTable), {}),
     box('Verdict', 'checkCircle', h('ul', { class: 'plain-list' }, VERDICTS.map((v) => h('li', {}, verdictLabel(v.id), ' ', v.description)))),
+    box(
+      'Pairwise comparison',
+      'columns',
+      frag(
+        h('p', {}, 'In Compare mode you judge two responses to the same prompt side by side, on a five-point preference scale, and justify the choice in writing.'),
+        h('ul', { class: 'plain-list' }, PREFERENCES.map((p) => h('li', {}, preferenceLabel(p.id), ' ', p.label))),
+        h('p', { class: 'note' }, 'Win rate counts a win as 1 and a tie as 0.5. The rationale matters more than the choice: name the specific difference that decided it.'),
+      ),
+    ),
     box('Focus criteria by category', 'beaker', focusTable),
     box(
       'Automated checks',
@@ -1155,6 +1482,7 @@ const TITLES = {
   benchmark: 'Cases',
   case: 'Case',
   evaluate: 'Evaluate',
+  compare: 'Compare',
   results: 'Results',
   rubric: 'Rubric',
   about: 'About',
@@ -1178,6 +1506,9 @@ function render() {
     case 'evaluate':
       view = viewEvaluate(query);
       break;
+    case 'compare':
+      view = viewCompare(query);
+      break;
     case 'results':
       view = viewResults(query);
       break;
@@ -1200,7 +1531,7 @@ function render() {
   }
   const resultsCounter = document.getElementById('count-results');
   if (resultsCounter) {
-    const n = store.all().length;
+    const n = store.all().length + comparisonStore.all().length;
     resultsCounter.textContent = String(n);
     resultsCounter.hidden = n === 0;
   }

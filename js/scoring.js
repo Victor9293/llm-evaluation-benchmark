@@ -153,3 +153,57 @@ export function formatPercent(rate) {
 export function formatScore(score) {
   return score == null ? '—' : score.toFixed(2);
 }
+
+// ───────────── Pairwise comparison (A vs B) ─────────────
+
+export const PREFERENCES = [
+  { id: 'a_much', label: 'A is much better', short: 'A ≫ B', winner: 'a' },
+  { id: 'a_slight', label: 'A is slightly better', short: 'A > B', winner: 'a' },
+  { id: 'tie', label: 'About the same', short: 'A = B', winner: 'tie' },
+  { id: 'b_slight', label: 'B is slightly better', short: 'B > A', winner: 'b' },
+  { id: 'b_much', label: 'B is much better', short: 'B ≫ A', winner: 'b' },
+];
+
+export const PREFERENCE_IDS = PREFERENCES.map((p) => p.id);
+
+export function preferenceWinner(preferenceId) {
+  return PREFERENCES.find((p) => p.id === preferenceId)?.winner ?? null;
+}
+
+/**
+ * Per-model head-to-head record from pairwise comparisons.
+ * A model compared with itself counts only as a tie for that model.
+ */
+export function summarizeComparisons(comparisons) {
+  const map = new Map();
+  const row = (model) => {
+    const key = model.trim();
+    if (!map.has(key)) map.set(key, { model: key, comparisons: 0, wins: 0, ties: 0, losses: 0 });
+    return map.get(key);
+  };
+  for (const c of comparisons) {
+    const a = row(c.modelA);
+    const b = row(c.modelB);
+    const winner = preferenceWinner(c.preference);
+    if (a === b) {
+      a.comparisons += 1;
+      a.ties += 1;
+      continue;
+    }
+    a.comparisons += 1;
+    b.comparisons += 1;
+    if (winner === 'a') {
+      a.wins += 1;
+      b.losses += 1;
+    } else if (winner === 'b') {
+      b.wins += 1;
+      a.losses += 1;
+    } else {
+      a.ties += 1;
+      b.ties += 1;
+    }
+  }
+  return [...map.values()]
+    .map((r) => ({ ...r, winRate: r.comparisons ? (r.wins + 0.5 * r.ties) / r.comparisons : null }))
+    .sort((x, y) => x.model.localeCompare(y.model));
+}

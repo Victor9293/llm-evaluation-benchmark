@@ -9,6 +9,9 @@ import {
   summarizeByCategory,
   formatPercent,
   formatScore,
+  PREFERENCES,
+  preferenceWinner,
+  summarizeComparisons,
 } from '../js/scoring.js';
 import { CASES, CATEGORIES } from '../js/cases.js';
 
@@ -79,4 +82,23 @@ test('formatting helpers', () => {
   assert.equal(formatPercent(0.666), '67%');
   assert.equal(formatScore(null), '—');
   assert.equal(formatScore(4), '4.00');
+});
+
+test('preferenceWinner maps every preference', () => {
+  assert.deepEqual(PREFERENCES.map((p) => preferenceWinner(p.id)), ['a', 'a', 'tie', 'b', 'b']);
+  assert.equal(preferenceWinner('nope'), null);
+});
+
+test('summarizeComparisons counts wins, ties and losses per model', () => {
+  const rows = summarizeComparisons([
+    { modelA: 'X', modelB: 'Y', preference: 'a_much' },
+    { modelA: 'Y', modelB: 'X', preference: 'a_slight' },
+    { modelA: 'X', modelB: 'Z', preference: 'tie' },
+    { modelA: 'Z', modelB: 'Z', preference: 'b_much' },
+  ]);
+  const by = Object.fromEntries(rows.map((r) => [r.model, r]));
+  assert.deepEqual([by.X.wins, by.X.ties, by.X.losses, by.X.comparisons], [1, 1, 1, 3]);
+  assert.equal(by.X.winRate, (1 + 0.5) / 3);
+  assert.deepEqual([by.Y.wins, by.Y.losses], [1, 1]);
+  assert.deepEqual([by.Z.ties, by.Z.comparisons, by.Z.wins], [2, 2, 0]);
 });

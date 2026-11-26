@@ -1,6 +1,6 @@
 // Tiny hash router: "#/case/FA-01?x=1" -> { route: 'case', params: ['FA-01'], query: { x: '1' } }
 
-export const ROUTES = ['overview', 'benchmark', 'case', 'evaluate', 'results', 'rubric', 'about'];
+export const ROUTES = ['overview', 'benchmark', 'case', 'evaluate', 'compare', 'results', 'rubric', 'about'];
 
 function safeDecode(s) {
   try {

@@ -20,7 +20,8 @@ Browser-based workbench to benchmark and human-evaluate LLM responses (manual en
 1. **Pick a case.** 56 test cases in four categories, in English and European Portuguese.
 2. **Run it yourself.** Copy the prompt into any chatbot or model, then paste the response back.
 3. **Evaluate.** Automated checks flag format and content problems as you paste. You then score the response on a five-criterion rubric and give a verdict (Pass / Partial / Fail) with notes.
-4. **Compare.** Results are summarised by model and by category. You can export them as JSON or CSV and import them again.
+4. **Compare two answers.** Paste two responses to the same prompt side by side, choose which is better on a five-point scale (A ≫ B … B ≫ A) and justify the choice in writing, as in pairwise ranking tasks used to train models.
+5. **Review.** Results are summarised by model and by category, with a head-to-head win rate for comparisons. You can export everything as JSON or CSV and import it again.
 
 There are no API keys, accounts, cookies, analytics or network calls. Evaluations stay in your browser's `localStorage`.
 
@@ -92,7 +93,8 @@ The app uses ES modules, so open it through a local server rather than by double
 - fabricated answers and classic wrong answers fail the relevant checks;
 - storage validation rejects malformed or tampered data;
 - CSV export escapes values and neutralises spreadsheet formulas;
-- import/export round-trips without data loss.
+- import/export round-trips without data loss, including pairwise comparisons;
+- the head-to-head summary counts wins, ties and losses correctly.
 
 CI runs the tests on every push and pull request. The site is deployed to GitHub Pages only after the tests pass.
 

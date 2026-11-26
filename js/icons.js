@@ -29,6 +29,8 @@ const PATHS = {
   list: '<path d="M5.5 4h8M5.5 8h8M5.5 12h8"/><path d="M2.5 4h.01M2.5 8h.01M2.5 12h.01"/>',
   clock: '<circle cx="8" cy="8" r="6.25"/><path d="M8 4.5V8l2.5 1.5"/>',
   person: '<circle cx="8" cy="5" r="2.75"/><path d="M2.75 14a5.25 5.25 0 0 1 10.5 0"/>',
+  columns: '<rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M8 2.5v11"/>',
+  swap: '<path d="M3 5h10M10 2l3 3-3 3"/><path d="M13 11H3M6 8l-3 3 3 3"/>',
   tag: '<path d="M2 2h5.5L14 8.5 8.5 14 2 7.5z"/><circle cx="5" cy="5" r=".75"/>',
 };
 

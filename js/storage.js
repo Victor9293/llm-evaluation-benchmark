@@ -1,9 +1,10 @@
 // Evaluation storage (browser localStorage), validation, import and export.
 // Nothing is ever sent over the network.
 
-import { CRITERION_IDS, VERDICT_IDS, rubricAverage } from './scoring.js';
+import { CRITERION_IDS, VERDICT_IDS, PREFERENCE_IDS, rubricAverage } from './scoring.js';
 
 export const STORAGE_KEY = 'leb.evaluations.v1';
+export const COMPARISONS_KEY = 'leb.comparisons.v1';
 export const EXPORT_FORMAT = 'llm-evaluation-benchmark/evaluations';
 export const EXPORT_VERSION = 1;
 
@@ -85,6 +86,62 @@ export function validateEvaluation(input, options = {}) {
   };
 }
 
+/**
+ * Validate a pairwise comparison (response A vs response B for the same case).
+ * Returns { ok, errors, value } like validateEvaluation.
+ */
+export function validateComparison(input, options = {}) {
+  const errors = [];
+  const caseIds = options.caseIds ? new Set(options.caseIds) : null;
+
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    return { ok: false, errors: ['Not an object'], value: null };
+  }
+  const c = input;
+
+  if (typeof c.id !== 'string' || !c.id || c.id.length > LIMITS.id) errors.push('Invalid id');
+  if (typeof c.caseId !== 'string' || (caseIds && !caseIds.has(c.caseId))) errors.push('Unknown case');
+  for (const side of ['A', 'B']) {
+    const model = c[`model${side}`];
+    const response = c[`response${side}`];
+    const checks = c[`checks${side}`];
+    if (typeof model !== 'string' || !model.trim() || model.length > LIMITS.model) errors.push(`Invalid model ${side}`);
+    if (typeof response !== 'string' || !response.trim() || response.length > LIMITS.response) {
+      errors.push(`Invalid response ${side}`);
+    }
+    if (!checks || !isCount(checks.passed) || !isCount(checks.total) || checks.passed > checks.total) {
+      errors.push(`Invalid checks ${side}`);
+    }
+  }
+  if (!PREFERENCE_IDS.includes(c.preference)) errors.push('Invalid preference');
+  if (typeof c.rationale !== 'string' || !c.rationale.trim() || c.rationale.length > LIMITS.notes) {
+    errors.push('Invalid rationale');
+  }
+  if (!isIsoDate(c.createdAt)) errors.push('Invalid createdAt');
+  if (c.updatedAt != null && !isIsoDate(c.updatedAt)) errors.push('Invalid updatedAt');
+
+  if (errors.length) return { ok: false, errors, value: null };
+
+  return {
+    ok: true,
+    errors: [],
+    value: {
+      id: c.id,
+      caseId: c.caseId,
+      modelA: c.modelA.trim(),
+      modelB: c.modelB.trim(),
+      responseA: c.responseA,
+      responseB: c.responseB,
+      checksA: { passed: c.checksA.passed, total: c.checksA.total },
+      checksB: { passed: c.checksB.passed, total: c.checksB.total },
+      preference: c.preference,
+      rationale: c.rationale.trim(),
+      createdAt: c.createdAt,
+      ...(c.updatedAt ? { updatedAt: c.updatedAt } : {}),
+    },
+  };
+}
+
 function probe(backend) {
   try {
     const k = '__leb_probe__';
@@ -100,31 +157,33 @@ function probe(backend) {
  * Create a store backed by a Storage-like object (localStorage). If the backend
  * is missing or unusable (e.g. blocked storage), data is kept in memory only.
  */
-export function createStore(backend) {
+export function createStore(backend, options = {}) {
+  const key = options.key ?? STORAGE_KEY;
+  const validate = options.validate ?? validateEvaluation;
   const persistent = Boolean(backend) && probe(backend);
   let memory = [];
 
   function read() {
     if (!persistent) return memory.slice();
     try {
-      const raw = backend.getItem(STORAGE_KEY);
+      const raw = backend.getItem(key);
       if (!raw) return [];
       const data = JSON.parse(raw);
       if (!Array.isArray(data)) return [];
-      return data.map((d) => validateEvaluation(d)).filter((r) => r.ok).map((r) => r.value);
+      return data.map((d) => validate(d)).filter((r) => r.ok).map((r) => r.value);
     } catch {
       return [];
     }
   }
 
   function write(list) {
-    if (persistent) backend.setItem(STORAGE_KEY, JSON.stringify(list));
+    if (persistent) backend.setItem(key, JSON.stringify(list));
     else memory = list.slice();
   }
 
   function mustBeValid(ev) {
-    const r = validateEvaluation(ev);
-    if (!r.ok) throw new Error(`Invalid evaluation: ${r.errors.join(', ')}`);
+    const r = validate(ev);
+    if (!r.ok) throw new Error(`Invalid record: ${r.errors.join(', ')}`);
     return r.value;
   }
 
@@ -181,43 +240,61 @@ export function createStore(backend) {
   };
 }
 
-export function toJSON(evaluations, now = new Date()) {
+export function toJSON(evaluations, now = new Date(), comparisons = []) {
   return JSON.stringify(
     {
       format: EXPORT_FORMAT,
       version: EXPORT_VERSION,
       exportedAt: now.toISOString(),
       evaluations,
+      comparisons,
     },
     null,
     2,
   );
 }
 
+function validateAll(list, validate, options) {
+  const valid = [];
+  let rejected = 0;
+  for (const item of list) {
+    const r = validate(item, options);
+    if (r.ok) valid.push(r.value);
+    else rejected += 1;
+  }
+  return { valid, rejected };
+}
+
 /**
- * Parse an exported file. Accepts the export envelope or a bare array.
- * Returns { valid, rejected, error }.
+ * Parse an exported file. Accepts the export envelope (with or without
+ * comparisons) or a bare array of evaluations.
+ * Returns { valid, rejected, comparisons, comparisonsRejected, error }.
  */
 export function parseImport(text, options = {}) {
+  const empty = { valid: [], rejected: 0, comparisons: [], comparisonsRejected: 0 };
   let data;
   try {
     data = JSON.parse(text);
   } catch {
-    return { valid: [], rejected: 0, error: 'The file is not valid JSON.' };
+    return { ...empty, error: 'The file is not valid JSON.' };
   }
-  let list;
-  if (Array.isArray(data)) list = data;
-  else if (data && data.format === EXPORT_FORMAT && Array.isArray(data.evaluations)) list = data.evaluations;
-  else return { valid: [], rejected: 0, error: 'This is not an LLM Evaluation Benchmark export.' };
+  let evaluations;
+  let comparisons = [];
+  if (Array.isArray(data)) evaluations = data;
+  else if (data && data.format === EXPORT_FORMAT && Array.isArray(data.evaluations)) {
+    evaluations = data.evaluations;
+    if (Array.isArray(data.comparisons)) comparisons = data.comparisons;
+  } else return { ...empty, error: 'This is not an LLM Evaluation Benchmark export.' };
 
-  const valid = [];
-  let rejected = 0;
-  for (const item of list) {
-    const r = validateEvaluation(item, options);
-    if (r.ok) valid.push(r.value);
-    else rejected += 1;
-  }
-  return { valid, rejected, error: null };
+  const ev = validateAll(evaluations, validateEvaluation, options);
+  const cmp = validateAll(comparisons, validateComparison, options);
+  return {
+    valid: ev.valid,
+    rejected: ev.rejected,
+    comparisons: cmp.valid,
+    comparisonsRejected: cmp.rejected,
+    error: null,
+  };
 }
 
 /** Escape one CSV cell. Strings that start like a formula are prefixed with ' to prevent CSV injection. */
@@ -266,6 +343,47 @@ export function toCSV(evaluations, cases) {
       ev.verdict,
       ev.notes ?? '',
       ev.response,
+    ];
+    rows.push(cells.map(csvEscape).join(','));
+  }
+  return rows.join('\r\n');
+}
+
+export const COMPARISON_CSV_COLUMNS = [
+  'id',
+  'created_at',
+  'case_id',
+  'category',
+  'language',
+  'model_a',
+  'model_b',
+  'checks_a',
+  'checks_b',
+  'preference',
+  'rationale',
+  'response_a',
+  'response_b',
+];
+
+export function toComparisonsCSV(comparisons, cases) {
+  const byId = new Map(cases.map((c) => [c.id, c]));
+  const rows = [COMPARISON_CSV_COLUMNS.join(',')];
+  for (const cmp of comparisons) {
+    const c = byId.get(cmp.caseId);
+    const cells = [
+      cmp.id,
+      cmp.createdAt,
+      cmp.caseId,
+      c?.category ?? '',
+      c?.lang ?? '',
+      cmp.modelA,
+      cmp.modelB,
+      `${cmp.checksA.passed}/${cmp.checksA.total}`,
+      `${cmp.checksB.passed}/${cmp.checksB.total}`,
+      cmp.preference,
+      cmp.rationale,
+      cmp.responseA,
+      cmp.responseB,
     ];
     rows.push(cells.map(csvEscape).join(','));
   }
