@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>LLM Evaluation Benchmark</title>
+  <meta name="description" content="Browser-based workbench to benchmark and human-evaluate LLM responses (manual entry, no API keys). 56 test cases in English and European Portuguese.">
+  <meta name="color-scheme" content="light dark">
+  <meta property="og:title" content="LLM Evaluation Benchmark">
+  <meta property="og:description" content="Browser-based workbench to benchmark and human-evaluate LLM responses (manual entry, no API keys).">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/theme-init.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="app-header">
+    <div class="container header-inner">
+      <a class="brand" href="#/">
+        <img src="assets/favicon.svg" alt="" width="28" height="28">
+        <span class="brand-name">LLM Evaluation Benchmark</span>
+      </a>
+      <span class="Label Label--secondary header-badge">v0.1 · early stage</span>
+      <div class="header-actions">
+        <a class="btn btn-sm" href="https://github.com/Victor9293/llm-evaluation-benchmark" rel="noopener" data-icon="code">Source</a>
+        <button id="theme-toggle" class="btn btn-sm btn-icon" type="button" aria-label="Change theme"></button>
+      </div>
+    </div>
+    <nav class="container UnderlineNav" aria-label="Sections">
+      <a class="UnderlineNav-item" href="#/" data-route="overview" data-icon="home">Overview</a>
+      <a class="UnderlineNav-item" href="#/benchmark" data-route="benchmark" data-icon="beaker">Benchmark <span class="Counter">56</span></a>
+      <a class="UnderlineNav-item" href="#/evaluate" data-route="evaluate" data-icon="pencil">Evaluate</a>
+      <a class="UnderlineNav-item" href="#/results" data-route="results" data-icon="graph">Results <span class="Counter" id="count-results" hidden>0</span></a>
+      <a class="UnderlineNav-item" href="#/rubric" data-route="rubric" data-icon="law">Rubric</a>
+      <a class="UnderlineNav-item" href="#/about" data-route="about" data-icon="info">About</a>
+    </nav>
+  </header>
+
+  <div id="flash" class="container flash-region" aria-live="polite"></div>
+
+  <main id="main" class="container" tabindex="-1">
+    <noscript>
+      <div class="flash flash-warn">This app needs JavaScript to run. It makes no network requests and stores data only in your browser.</div>
+    </noscript>
+  </main>
+
+  <footer class="app-footer">
+    <div class="container footer-inner">
+      <span>© 2026 Victor Ferreira · MIT licence · Personal project, built with AI coding assistance</span>
+      <a href="https://github.com/Victor9293/llm-evaluation-benchmark" rel="noopener">Source &amp; docs on GitHub</a>
+    </div>
+  </footer>
+</body>
+</html>

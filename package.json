@@ -1,0 +1,21 @@
+{
+  "name": "llm-evaluation-benchmark",
+  "version": "0.1.0",
+  "description": "Browser-based workbench to benchmark and human-evaluate LLM responses (manual entry, no API keys)",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Victor Ferreira",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Victor9293/llm-evaluation-benchmark.git"
+  },
+  "homepage": "https://victor9293.github.io/llm-evaluation-benchmark/",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
