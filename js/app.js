@@ -210,7 +210,7 @@ function viewOverview() {
       h(
         'p',
         { class: 'hero-lead' },
-        `${CASES.length} hand-written test cases in English and European Portuguese. Paste a model's response, get instant automated checks, then judge it with a clear rubric. No API keys, no server, and nothing leaves your browser.`,
+        `${CASES.length} curated test cases in English and European Portuguese. Paste a model's response, get instant automated checks, then judge it with a clear rubric. No API keys, no server, and nothing leaves your browser.`,
       ),
       h(
         'div',
